@@ -1,0 +1,13 @@
+Dépose ici ton fichier logo.png (le logo de MediShield / CNHU-HKM).
+
+Format recommandé : PNG avec fond transparent, environ 200x200px.
+
+Il est utilisé automatiquement à deux endroits dans l'interface dès
+qu'il est présent ici :
+1. Page de connexion (src/routes/login/+page.svelte)
+2. Barre latérale du dashboard (src/routes/+page.svelte)
+
+Aucune modification de code n'est nécessaire si ton fichier s'appelle
+exactement "logo.png" et se trouve directement dans ce dossier
+(static/logo.png). Le code affiche déjà cette image ; si le fichier
+est absent, une icône bouclier de secours s'affiche à la place.

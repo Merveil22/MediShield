@@ -1,0 +1,75 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+	:root {
+		--background: 222 47% 4%;
+		--foreground: 213 31% 91%;
+		--card: 222 40% 8%;
+		--card-foreground: 213 31% 91%;
+		--border: 217 33% 20%;
+		--input: 217 33% 20%;
+		--ring: 199 89% 58%;
+		--primary: 199 89% 58%;
+		--primary-foreground: 222 47% 4%;
+		--secondary: 239 84% 73%;
+		--secondary-foreground: 222 47% 4%;
+		--muted: 217 33% 17%;
+		--muted-foreground: 215 20% 55%;
+		--accent: 217 33% 17%;
+		--accent-foreground: 213 31% 91%;
+		--destructive: 350 89% 60%;
+		--destructive-foreground: 210 40% 98%;
+		--radius: 0.9rem;
+	}
+
+	* {
+		border-color: hsl(var(--border));
+	}
+	body {
+		background: radial-gradient(circle at 15% 0%, #0b1224 0%, #020617 45%, #020617 100%);
+		background-attachment: fixed;
+		min-height: 100vh;
+	}
+}
+
+@layer utilities {
+	.bg-grid {
+		background-image: linear-gradient(rgba(56, 189, 248, 0.05) 1px, transparent 1px),
+			linear-gradient(90deg, rgba(56, 189, 248, 0.05) 1px, transparent 1px);
+		background-size: 42px 42px;
+	}
+	.glass {
+		background: linear-gradient(160deg, rgba(30, 41, 59, 0.55) 0%, rgba(15, 23, 42, 0.65) 100%);
+		backdrop-filter: blur(18px);
+		border: 1px solid rgba(148, 163, 184, 0.12);
+		box-shadow:
+			0 8px 32px rgba(0, 0, 0, 0.35),
+			inset 0 1px 0 rgba(255, 255, 255, 0.04);
+	}
+	.glass:hover {
+		border-color: rgba(56, 189, 248, 0.35);
+		box-shadow: 0 12px 40px rgba(56, 189, 248, 0.12);
+	}
+	.glow-text {
+		text-shadow: 0 0 20px rgba(56, 189, 248, 0.5);
+	}
+	.gradient-bar {
+		background: linear-gradient(90deg, #38bdf8, #818cf8, #f43f5e);
+	}
+	@keyframes pulse-dot {
+		0%,
+		100% {
+			opacity: 1;
+			box-shadow: 0 0 0 0 rgba(244, 63, 94, 0.6);
+		}
+		50% {
+			opacity: 0.6;
+			box-shadow: 0 0 0 8px rgba(244, 63, 94, 0);
+		}
+	}
+	.live-dot {
+		animation: pulse-dot 1.6s infinite;
+	}
+}

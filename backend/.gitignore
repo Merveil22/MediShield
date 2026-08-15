@@ -1,0 +1,5 @@
+node_modules
+.env
+rapports_generes
+*.log
+.DS_Store
