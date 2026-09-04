@@ -5,10 +5,6 @@ import { enregistrerActivite } from '../utils/journal.js';
 
 export const routeurParametres = Router();
 
-/**
- * GET /api/parametres
- * Liste tous les paramètres système (clé/valeur).
- */
 routeurParametres.get('/parametres', verifierToken, async (req, res) => {
 	try {
 		const [lignes] = await pool.query('SELECT * FROM parametres ORDER BY cle');
@@ -19,10 +15,6 @@ routeurParametres.get('/parametres', verifierToken, async (req, res) => {
 	}
 });
 
-/**
- * PATCH /api/parametres/:cle
- * Met à jour la valeur d'un paramètre. { valeur }
- */
 routeurParametres.patch('/parametres/:cle', verifierToken, async (req, res) => {
 	try {
 		const { valeur } = req.body;

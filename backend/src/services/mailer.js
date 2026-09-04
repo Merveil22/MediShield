@@ -1,11 +1,5 @@
 import nodemailer from 'nodemailer';
 
-// Transporteur SMTP pour l'envoi d'email — configuré une seule fois.
-// L'OTP est envoyé uniquement par email (le SMS via FasterMessage a
-// été abandonné : la vérification KYC demandait des documents hors
-// de portée pour ce projet). Si besoin de réactiver un canal SMS plus
-// tard, ajoute une fonction envoyerParSms() ici et un cas dans
-// envoyerOtp() ci-dessous.
 const transporteur = nodemailer.createTransport({
 	host: process.env.SMTP_HOST,
 	port: Number(process.env.SMTP_PORT),
@@ -28,10 +22,6 @@ async function envoyerParEmail(destinataire, code, dureeValiditeSecondes) {
 	});
 }
 
-/**
- * Point d'entrée unique : envoie le code par le canal demandé.
- * Pour l'instant, seul 'email' est implémenté.
- */
 export async function envoyerOtp({ canal, email, code, dureeValiditeSecondes }) {
 	switch (canal) {
 		case 'email':
@@ -39,4 +29,18 @@ export async function envoyerOtp({ canal, email, code, dureeValiditeSecondes }) 
 		default:
 			throw new Error(`Canal OTP non pris en charge : ${canal}`);
 	}
+}
+
+export async function envoyerCodeConfirmation(destinataire, code, dureeValiditeSecondes) {
+	const minutes = Math.round(dureeValiditeSecondes / 60);
+	await transporteur.sendMail({
+		from: `"MediShield — CNHU-HKM" <${process.env.SMTP_USER}>`,
+		to: destinataire,
+		subject: 'Confirmez votre adresse email — MediShield',
+		text: `Bienvenue sur MediShield. Pour confirmer ton adresse email, saisis ce code : ${code}\nIl expire dans ${minutes} minutes.`,
+		html: `<p>Bienvenue sur <strong>MediShield</strong>.</p>
+               <p>Pour confirmer ton adresse email, saisis ce code dans l'application :</p>
+               <p style="font-size:22px"><strong>${code}</strong></p>
+               <p>Il expire dans <strong>${minutes} minutes</strong>.</p>`
+	});
 }

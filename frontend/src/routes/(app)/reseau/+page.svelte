@@ -51,7 +51,6 @@
 <svelte:head><title>Réseau — MediShield</title></svelte:head>
 
 <div class="p-8">
-	<!-- Carte réseau animée -->
 	<div class="mb-5">
 		{#if chargement}
 			<div class="glass rounded-2xl p-8 text-center text-sm text-slate-500">

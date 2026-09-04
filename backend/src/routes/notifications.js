@@ -4,11 +4,6 @@ import { verifierToken } from './auth.js';
 
 export const routeurNotifications = Router();
 
-/**
- * GET /api/notifications
- * Liste les notifications de l'administrateur connecté (les plus
- * récentes d'abord), pour la cloche 🔔 du dashboard.
- */
 routeurNotifications.get('/notifications', verifierToken, async (req, res) => {
 	try {
 		const [lignes] = await pool.query(
@@ -22,10 +17,6 @@ routeurNotifications.get('/notifications', verifierToken, async (req, res) => {
 	}
 });
 
-/**
- * PATCH /api/notifications/:id/lue
- * Marque une notification comme lue.
- */
 routeurNotifications.patch('/notifications/:id/lue', verifierToken, async (req, res) => {
 	try {
 		await pool.query(
@@ -39,10 +30,6 @@ routeurNotifications.patch('/notifications/:id/lue', verifierToken, async (req, 
 	}
 });
 
-/**
- * PATCH /api/notifications/tout-lire
- * Marque toutes les notifications de l'admin connecté comme lues.
- */
 routeurNotifications.patch('/notifications/tout-lire', verifierToken, async (req, res) => {
 	try {
 		await pool.query('UPDATE notifications SET lue = TRUE WHERE utilisateur_id = ?', [

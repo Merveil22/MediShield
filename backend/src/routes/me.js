@@ -6,12 +6,6 @@ import { enregistrerActivite } from '../utils/journal.js';
 
 export const routeurMe = Router();
 
-/**
- * GET /api/me
- * Renvoie les informations de l'administrateur actuellement connecté
- * (déduit du token JWT). Utilisé par le dashboard pour afficher le
- * nom et le statut "En ligne".
- */
 routeurMe.get('/me', verifierToken, async (req, res) => {
 	try {
 		const [lignes] = await pool.query(
@@ -30,11 +24,6 @@ routeurMe.get('/me', verifierToken, async (req, res) => {
 	}
 });
 
-/**
- * PATCH /api/me/password
- * Change le mot de passe de l'administrateur connecté.
- * { motDePasseActuel, nouveauMotDePasse }
- */
 routeurMe.patch('/me/password', verifierToken, async (req, res) => {
 	try {
 		const { motDePasseActuel, nouveauMotDePasse } = req.body;

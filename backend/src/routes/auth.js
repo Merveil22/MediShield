@@ -4,13 +4,12 @@ import jwt from 'jsonwebtoken';
 import rateLimit from 'express-rate-limit';
 import { pool } from '../config/db.js';
 import { creerOtp, verifierOtp } from '../utils/otp.js';
-import { envoyerOtp } from '../services/mailer.js';
+import { creerConfirmationEmail, verifierConfirmationEmail } from '../utils/confirmationEmail.js';
+import { envoyerOtp, envoyerCodeConfirmation } from '../services/mailer.js';
 import { enregistrerActivite } from '../utils/journal.js';
 
 export const routeurAuth = Router();
 
-// Anti-bruteforce : 8 tentatives max toutes les 15 minutes, par IP,
-// sur les routes sensibles (login, OTP, inscription).
 const limiteurAuth = rateLimit({
 	windowMs: 15 * 60 * 1000,
 	max: 8,
@@ -19,14 +18,6 @@ const limiteurAuth = rateLimit({
 	message: { erreur: 'Trop de tentatives. Réessaie dans quelques minutes.' }
 });
 
-/**
- * POST /signup
- * Crée un nouveau compte administrateur. Protégé par un code
- * d'inscription partagé (CODE_INSCRIPTION dans .env) — ça évite que
- * n'importe qui puisse créer un compte admin juste en visitant
- * /inscription. Le code est à communiquer en interne (par le
- * responsable du service) à tout nouvel administrateur.
- */
 routeurAuth.post('/signup', limiteurAuth, async (req, res) => {
 	const { nom, prenom, email, telephone, motDePasse, codeInscription, role } = req.body;
 
@@ -52,27 +43,82 @@ routeurAuth.post('/signup', limiteurAuth, async (req, res) => {
 
 		const hash = await bcrypt.hash(motDePasse, 10);
 
-		await pool.query(
-			`INSERT INTO utilisateurs (nom, prenom, email, telephone, password_hash, role, canal_otp_prefere)
-             VALUES (?, ?, ?, ?, ?, ?, 'email')`,
+		const [resultat] = await pool.query(
+			`INSERT INTO utilisateurs (nom, prenom, email, telephone, password_hash, role, canal_otp_prefere, email_confirme)
+             VALUES (?, ?, ?, ?, ?, ?, 'email', FALSE)`,
 			[nom, prenom, email, telephone || null, hash, roleFinal]
 		);
 
-		return res.status(201).json({ message: 'Compte créé avec succès. Tu peux te connecter.' });
+		const utilisateurId = resultat.insertId;
+
+		const { code, dureeValiditeSecondes } = await creerConfirmationEmail(utilisateurId);
+		await envoyerCodeConfirmation(email, code, dureeValiditeSecondes);
+
+		return res.status(201).json({
+			message: 'Compte créé. Un code de confirmation a été envoyé par email.',
+			utilisateurId,
+			dureeValiditeSecondes
+		});
 	} catch (erreur) {
 		console.error('Erreur /signup :', erreur);
 		return res.status(500).json({ erreur: 'Erreur serveur.' });
 	}
 });
 
-/**
- * ÉTAPE 1 — POST /login
- * Reçoit { email, motDePasse }.
- * Si les identifiants sont corrects, génère un OTP, l'enregistre en
- * base (valable 20s) et l'envoie sur le canal préféré de l'admin.
- * Ne renvoie JAMAIS le code au client — seulement une confirmation
- * d'envoi + l'id utilisateur nécessaire pour l'étape 2.
- */
+routeurAuth.post('/confirm-email', limiteurAuth, async (req, res) => {
+	const { utilisateurId, code } = req.body;
+
+	if (!utilisateurId || !code) {
+		return res.status(400).json({ erreur: "Identifiant utilisateur et code requis." });
+	}
+
+	try {
+		const resultat = await verifierConfirmationEmail(utilisateurId, code);
+
+		if (!resultat.valide) {
+			return res.status(401).json({ erreur: resultat.raison });
+		}
+
+		await enregistrerActivite({
+			utilisateurId,
+			action: 'Email confirmé',
+			ipUtilisateur: req.ip
+		});
+
+		return res.json({ message: 'Email confirmé avec succès. Tu peux maintenant te connecter.' });
+	} catch (erreur) {
+		console.error('Erreur /confirm-email :', erreur);
+		return res.status(500).json({ erreur: 'Erreur serveur.' });
+	}
+});
+
+routeurAuth.post('/resend-confirmation', limiteurAuth, async (req, res) => {
+	const { utilisateurId } = req.body;
+	if (!utilisateurId) {
+		return res.status(400).json({ erreur: 'Identifiant utilisateur requis.' });
+	}
+
+	try {
+		const [lignes] = await pool.query('SELECT email, email_confirme FROM utilisateurs WHERE id = ?', [
+			utilisateurId
+		]);
+		if (lignes.length === 0) {
+			return res.status(404).json({ erreur: 'Compte introuvable.' });
+		}
+		if (lignes[0].email_confirme) {
+			return res.status(409).json({ erreur: 'Cet email est déjà confirmé.' });
+		}
+
+		const { code, dureeValiditeSecondes } = await creerConfirmationEmail(utilisateurId);
+		await envoyerCodeConfirmation(lignes[0].email, code, dureeValiditeSecondes);
+
+		return res.json({ message: 'Nouveau code envoyé.', dureeValiditeSecondes });
+	} catch (erreur) {
+		console.error('Erreur /resend-confirmation :', erreur);
+		return res.status(500).json({ erreur: 'Erreur serveur.' });
+	}
+});
+
 routeurAuth.post('/login', limiteurAuth, async (req, res) => {
 	const { email, motDePasse } = req.body;
 
@@ -82,14 +128,11 @@ routeurAuth.post('/login', limiteurAuth, async (req, res) => {
 
 	try {
 		const [lignes] = await pool.query(
-			'SELECT id, nom, email, telephone, password_hash, canal_otp_prefere FROM utilisateurs WHERE email = ?',
+			'SELECT id, nom, email, telephone, password_hash, canal_otp_prefere, email_confirme FROM utilisateurs WHERE email = ?',
 			[email]
 		);
 
 		if (lignes.length === 0) {
-			// Message volontairement générique : on ne révèle jamais si
-			// c'est l'email ou le mot de passe qui est incorrect — ça
-			// éviterait à un attaquant de deviner les comptes existants.
 			return res.status(401).json({ erreur: 'Identifiants invalides.' });
 		}
 
@@ -100,16 +143,19 @@ routeurAuth.post('/login', limiteurAuth, async (req, res) => {
 			return res.status(401).json({ erreur: 'Identifiants invalides.' });
 		}
 
-		// Identifiants corrects → on génère et envoie l'OTP
-		const { code, dureeValiditeSecondes } = await creerOtp(
-			utilisateur.id,
-			utilisateur.canal_otp_prefere
-		);
+		if (!utilisateur.email_confirme) {
+			return res.status(403).json({
+				erreur: "Adresse email non confirmée. Vérifie ta boîte mail ou demande un nouveau code.",
+				emailNonConfirme: true,
+				utilisateurId: utilisateur.id
+			});
+		}
+
+		const { code, dureeValiditeSecondes } = await creerOtp(utilisateur.id, utilisateur.canal_otp_prefere);
 
 		await envoyerOtp({
 			canal: utilisateur.canal_otp_prefere,
 			email: utilisateur.email,
-			telephone: utilisateur.telephone,
 			code,
 			dureeValiditeSecondes
 		});
@@ -125,13 +171,6 @@ routeurAuth.post('/login', limiteurAuth, async (req, res) => {
 	}
 });
 
-/**
- * ÉTAPE 2 — POST /verify-otp
- * Reçoit { utilisateurId, code }.
- * Si le code est valide et non expiré, émet un token JWT et le
- * renvoie au client — c'est ce token qui donnera ensuite accès au
- * dashboard (routes protégées).
- */
 routeurAuth.post('/verify-otp', limiteurAuth, async (req, res) => {
 	const { utilisateurId, code } = req.body;
 
@@ -146,7 +185,6 @@ routeurAuth.post('/verify-otp', limiteurAuth, async (req, res) => {
 			return res.status(401).json({ erreur: resultat.raison });
 		}
 
-		// OTP valide → on émet le token JWT de session
 		const token = jwt.sign({ utilisateurId }, process.env.JWT_SECRET, {
 			expiresIn: process.env.JWT_EXPIRATION || '8h'
 		});
@@ -165,14 +203,6 @@ routeurAuth.post('/verify-otp', limiteurAuth, async (req, res) => {
 	}
 });
 
-/**
- * Middleware à réutiliser sur toutes les routes protégées
- * (/dashboard, /alerts, /block-ip, etc.) pour vérifier le JWT.
- * Accepte le token soit dans le header Authorization (cas normal,
- * via fetch), soit en paramètre ?token=... (nécessaire pour les
- * liens de téléchargement de fichiers, ouverts directement par le
- * navigateur sans pouvoir poser de header).
- */
 export function verifierToken(req, res, next) {
 	const enTete = req.headers.authorization;
 	const tokenHeader = enTete && enTete.startsWith('Bearer ') ? enTete.split(' ')[1] : null;

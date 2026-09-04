@@ -1,10 +1,11 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { FileText, Download, Loader2 } from 'lucide-svelte';
+	import { FileText, Download, Loader2, Eye, EyeOff, Copy, Check, Lock } from 'lucide-svelte';
 	import {
 		listerRapports,
 		genererRapport,
-		urlTelechargementRapport
+		urlTelechargementRapport,
+		recupererProfil
 	} from '$lib/api/ressources';
 
 	type Rapport = {
@@ -17,12 +18,17 @@
 		nb_alertes: number;
 		nb_critiques: number;
 		score_securite: number;
+		mot_de_passe_pdf?: string;
 	};
 
 	let rapports: Rapport[] = [];
 	let chargement = true;
 	let generation = false;
 	let erreur = '';
+	let estSuperAdmin = false;
+
+	let motsDePasseVisibles = new Set<number>();
+	let motDePasseCopieId: number | null = null;
 
 	const aujourdHui = new Date().toISOString().slice(0, 10);
 	const ilYaUnMois = new Date(Date.now() - 30 * 24 * 3600 * 1000).toISOString().slice(0, 10);
@@ -50,13 +56,33 @@
 		}
 	}
 
-	onMount(charger);
+	function basculerVisibilite(id: number) {
+		if (motsDePasseVisibles.has(id)) {
+			motsDePasseVisibles.delete(id);
+		} else {
+			motsDePasseVisibles.add(id);
+		}
+		motsDePasseVisibles = motsDePasseVisibles; 
+	}
+
+	async function copierMotDePasse(id: number, motDePasse: string) {
+		await navigator.clipboard.writeText(motDePasse);
+		motDePasseCopieId = id;
+		setTimeout(() => {
+			if (motDePasseCopieId === id) motDePasseCopieId = null;
+		}, 1500);
+	}
+
+	onMount(async () => {
+		const profil = await recupererProfil();
+		estSuperAdmin = profil.role === 'super_admin';
+		await charger();
+	});
 </script>
 
-<svelte:head><title>Rapports - MediShield</title></svelte:head>
+<svelte:head><title>Rapports — MediShield</title></svelte:head>
 
 <div class="p-8">
-	<!-- Formulaire de génération -->
 	<div class="glass mb-5 flex flex-wrap items-end gap-4 rounded-2xl p-5">
 		<div class="flex flex-col gap-1.5">
 			<label for="type" class="text-xs font-semibold text-slate-500">Type de rapport</label>
@@ -105,6 +131,15 @@
 		<p class="mb-4 text-sm text-rose-400">{erreur}</p>
 	{/if}
 
+	<div class="mb-4 flex items-center gap-2 rounded-lg border border-sky-500/20 bg-sky-500/5 px-3 py-2 text-xs text-sky-300">
+		<Lock size={14} />
+		Chaque PDF généré est protégé par un mot de passe unique — le fichier le redemandera à
+		l'ouverture, quel que soit le lecteur utilisé.
+		{#if !estSuperAdmin}
+			<span class="text-slate-500">(mot de passe visible par le super administrateur uniquement)</span>
+		{/if}
+	</div>
+
 	<!-- Historique -->
 	<div class="glass overflow-hidden rounded-2xl p-0">
 		<div class="border-b border-slate-800 p-5">
@@ -126,6 +161,9 @@
 						<th class="px-4 py-3 font-bold">Généré le</th>
 						<th class="px-4 py-3 font-bold">Alertes</th>
 						<th class="px-4 py-3 font-bold">Score</th>
+						{#if estSuperAdmin}
+							<th class="px-4 py-3 font-bold">Mot de passe PDF</th>
+						{/if}
 						<th class="px-4 py-3 font-bold">Télécharger</th>
 					</tr>
 				</thead>
@@ -138,6 +176,41 @@
 							>
 							<td class="px-4 py-3">{r.nb_alertes} ({r.nb_critiques} critiques)</td>
 							<td class="px-4 py-3 font-mono">{r.score_securite}/100</td>
+							{#if estSuperAdmin}
+								<td class="px-4 py-3">
+									{#if r.mot_de_passe_pdf}
+										<div class="flex items-center gap-2">
+											<span class="font-mono text-xs text-amber-300">
+												{motsDePasseVisibles.has(r.id) ? r.mot_de_passe_pdf : '••••••••••'}
+											</span>
+											<button
+												on:click={() => basculerVisibilite(r.id)}
+												title={motsDePasseVisibles.has(r.id) ? 'Masquer' : 'Afficher'}
+												class="text-slate-500 hover:text-sky-400"
+											>
+												{#if motsDePasseVisibles.has(r.id)}
+													<EyeOff size={14} />
+												{:else}
+													<Eye size={14} />
+												{/if}
+											</button>
+											<button
+												on:click={() => copierMotDePasse(r.id, r.mot_de_passe_pdf ?? '')}
+												title="Copier"
+												class="text-slate-500 hover:text-sky-400"
+											>
+												{#if motDePasseCopieId === r.id}
+													<Check size={14} class="text-emerald-400" />
+												{:else}
+													<Copy size={14} />
+												{/if}
+											</button>
+										</div>
+									{:else}
+										<span class="text-xs text-slate-600">—</span>
+									{/if}
+								</td>
+							{/if}
 							<td class="px-4 py-3">
 								<a
 									href={urlTelechargementRapport(r.id)}

@@ -12,15 +12,14 @@ import { routeurParametres } from './routes/parametres.js';
 import { routeurScore } from './routes/score.js';
 import { routeurNotifications } from './routes/notifications.js';
 import { routeurActivites } from './routes/activites.js';
+import { routeurIngestionSuricata } from './routes/suricataIngest.js';
 
 const app = express();
 app.use(cors());
 app.use(express.json());
 
-// Routes publiques (signup, login, OTP)
 app.use('/api', routeurAuth);
 
-// Routes protégées (nécessitent un token JWT valide)
 app.use('/api', routeurMe);
 app.use('/api', routeurAlertes);
 app.use('/api', routeurIp);
@@ -31,6 +30,7 @@ app.use('/api', routeurParametres);
 app.use('/api', routeurScore);
 app.use('/api', routeurNotifications);
 app.use('/api', routeurActivites);
+app.use('/api', routeurIngestionSuricata);
 
 app.get('/api/dashboard', verifierToken, (req, res) => {
 	res.json({

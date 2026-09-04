@@ -2,10 +2,6 @@ import bcrypt from 'bcrypt';
 import 'dotenv/config';
 import { pool } from './src/config/db.js';
 
-// Usage : node creer-admin.js
-// Crée un compte admin de test pour pouvoir essayer /login.
-// Modifie les valeurs ci-dessous avant de lancer.
-
 const NOM = 'Test';
 const PRENOM = 'Admin';
 const EMAIL = 'bidossessimerveille@gmail.com';

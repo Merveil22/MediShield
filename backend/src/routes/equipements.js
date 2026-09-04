@@ -4,12 +4,6 @@ import { verifierToken } from './auth.js';
 
 export const routeurEquipements = Router();
 
-/**
- * GET /api/network
- * Liste les équipements réseau surveillés (utilisé par la page
- * "Réseau" — pas encore la vraie topologie GNS3, juste la liste
- * avec leur statut).
- */
 routeurEquipements.get('/network', verifierToken, async (req, res) => {
 	try {
 		const [lignes] = await pool.query('SELECT * FROM equipements ORDER BY nom');
@@ -20,11 +14,6 @@ routeurEquipements.get('/network', verifierToken, async (req, res) => {
 	}
 });
 
-/**
- * POST /api/network
- * Ajoute un équipement à surveiller (saisie manuelle en attendant
- * la découverte automatique via GNS3/Suricata).
- */
 routeurEquipements.post('/network', verifierToken, async (req, res) => {
 	try {
 		const { nom, ip, type, vlan, description } = req.body;

@@ -1,8 +1,3 @@
-// test-connexion.js
-// Usage : node test-connexion.js
-//
-// Teste le flux complet login -> OTP -> token, directement dans le
-// terminal, sans avoir besoin de Postman ou d'un navigateur.
 
 import readline from 'node:readline/promises';
 import { stdin as entree, stdout as sortie } from 'node:process';

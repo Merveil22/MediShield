@@ -5,10 +5,6 @@ import { enregistrerActivite, creerNotification } from '../utils/journal.js';
 
 export const routeurIp = Router();
 
-/**
- * GET /api/block-ip
- * Liste toutes les IP actuellement bloquées.
- */
 routeurIp.get('/block-ip', verifierToken, async (req, res) => {
 	try {
 		const [lignes] = await pool.query(
@@ -25,19 +21,10 @@ routeurIp.get('/block-ip', verifierToken, async (req, res) => {
 	}
 });
 
-/**
- * POST /api/block-ip
- * Bloque une nouvelle IP. { ip, raison, duree, commentaire }
- * NOTE : pour l'instant, ceci enregistre seulement le blocage en base
- * (pas encore de vraie commande iptables — ça viendra avec la
- * connexion réseau réelle).
- */
 routeurIp.post('/block-ip', verifierToken, async (req, res) => {
 	try {
 		const { ip, raison, duree, commentaire } = req.body;
 
-		// Validation stricte du format IP (empêche l'injection de
-		// commande le jour où on branchera iptables pour de vrai).
 		const regexIp = /^(\d{1,3}\.){3}\d{1,3}$/;
 		if (!ip || !regexIp.test(ip)) {
 			return res.status(400).json({ erreur: 'Adresse IP invalide.' });
@@ -69,10 +56,6 @@ routeurIp.post('/block-ip', verifierToken, async (req, res) => {
 	}
 });
 
-/**
- * DELETE /api/block-ip/:id
- * Débloque une IP (marque debloque_par / debloque_le).
- */
 routeurIp.delete('/block-ip/:id', verifierToken, async (req, res) => {
 	try {
 		await pool.query(

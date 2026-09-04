@@ -4,11 +4,6 @@ import { verifierToken } from './auth.js';
 
 export const routeurLogs = Router();
 
-/**
- * GET /api/logs
- * Liste les logs système, avec filtres optionnels :
- * ?source=auth&type=error&recherche=connexion
- */
 routeurLogs.get('/logs', verifierToken, async (req, res) => {
 	try {
 		const { source, type, recherche } = req.query;

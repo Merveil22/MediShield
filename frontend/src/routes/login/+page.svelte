@@ -5,15 +5,6 @@
 	import { Shield, Mail, Lock, KeyRound, Loader2, AlertCircle, CheckCircle2 } from 'lucide-svelte';
 	import { login, verifierOtp, ErreurApi } from '$lib/api/auth';
 
-	// Si static/logo.png n'existe pas, on retombe automatiquement sur
-	// l'icône bouclier — aucune modification de code n'est nécessaire,
-	// dépose juste ton fichier dans static/logo.png.
-	let logoManquant = false;
-
-	// ------------------------------------------------------------------
-	// État du formulaire
-	// ------------------------------------------------------------------
-
 	type Etape = 'identifiants' | 'otp';
 
 	let etape: Etape = 'identifiants';
@@ -25,6 +16,8 @@
 	let chargement = false;
 	let verificationReussie = false;
 	let erreur = '';
+
+	let logoManquant = false;
 
 	let secondesRestantes = 0;
 	let intervalleCompteARebours: ReturnType<typeof setInterval> | null = null;
@@ -44,10 +37,6 @@
 		if (intervalleCompteARebours) clearInterval(intervalleCompteARebours);
 	});
 
-	// ------------------------------------------------------------------
-	// Étape 1 : email + mot de passe
-	// ------------------------------------------------------------------
-
 	async function soumettreIdentifiants() {
 		erreur = '';
 		chargement = true;
@@ -57,15 +46,15 @@
 			demarrerCompteARebours(resultat.dureeValiditeSecondes);
 			etape = 'otp';
 		} catch (e) {
+			if (e instanceof ErreurApi && e.emailNonConfirme && e.utilisateurId) {
+				goto(`/inscription?confirmation=${e.utilisateurId}`);
+				return;
+			}
 			erreur = e instanceof ErreurApi ? e.message : 'Erreur de connexion au serveur.';
 		} finally {
 			chargement = false;
 		}
 	}
-
-	// ------------------------------------------------------------------
-	// Étape 2 : code OTP
-	// ------------------------------------------------------------------
 
 	async function soumettreOtp() {
 		if (!utilisateurId) return;
@@ -73,13 +62,9 @@
 		chargement = true;
 		try {
 			const resultat = await verifierOtp(utilisateurId, code);
-			// Le token JWT sert à toutes les requêtes protégées suivantes
-			// (dashboard, alertes, blocage IP, etc.)
+		
 			localStorage.setItem('medishield_token', resultat.token);
 
-			// Transition visible avant la redirection : sans ce délai
-			// volontaire, la bascule vers le dashboard est instantanée
-			// et donne l'impression que rien ne s'est passé.
 			verificationReussie = true;
 			await new Promise((resolve) => setTimeout(resolve, 900));
 			goto('/');
@@ -97,24 +82,16 @@
 </script>
 
 <svelte:head>
-	<title>Connexion — MediShield</title>
+	<title>Connexion - MediShield</title>
 </svelte:head>
 
 <div class="bg-grid relative flex min-h-screen items-center justify-center p-4">
 	<div class="pointer-events-none fixed inset-0 z-0" />
 
 	<div class="relative z-10 w-full max-w-md">
-		<!-- En-tête / identité -->
 		<div class="mb-8 flex flex-col items-center gap-3 text-center">
-			<!--
-				Affiche automatiquement static/logo.png dès qu'il est
-				présent. S'il est absent (erreur de chargement), on
-				retombe sur l'icône bouclier — aucune modification de
-				code nécessaire, dépose juste ton fichier logo.png ici :
-				medishield/frontend/static/logo.png
-			-->
 			<div
-				class="flex h-16 w-16 items-center justify-center rounded-2xl border border-sky-400/40 bg-sky-400/10 overflow-hidden"
+				class="flex h-16 w-16 items-center justify-center overflow-hidden rounded-2xl border border-sky-400/40 bg-sky-400/10"
 			>
 				{#if !logoManquant}
 					<img
@@ -130,16 +107,15 @@
 			<div>
 				<h1 class="glow-text text-2xl font-extrabold tracking-tight">MediShield</h1>
 				<p class="font-mono text-xs tracking-widest text-slate-500">
-					SUPERVISION SOC — IDS
+					SUPERVISION SOC - IDS
 				</p>
 			</div>
 			<p class="text-sm text-slate-500">CNHU Hubert Koutoukou MAGA</p>
 		</div>
 
-		<!-- Carte du formulaire -->
 		<div class="glass rounded-2xl p-8">
 			{#if etape === 'identifiants'}
-				<h2 class="mb-1 text-lg font-bold text-white"><center>Connexion administrateur</center></h2>
+				<h2 class="mb-1 text-center text-lg font-bold text-white">Connexion administrateur</h2>
 				<p class="mb-6 text-sm text-slate-400">
 					Saisis tes identifiants pour recevoir un code de vérification par email.
 				</p>
@@ -279,13 +255,13 @@
 		</div>
 
 		<p class="mt-6 text-center text-xs text-slate-600">
-			© 2027 Nelly & Merveille - Tous droits réservés SSI-3
+			© 2027 Merveille ALLIHA GLE - Tous droits réservés SSI-3
 		</p>
 	</div>
 
 	{#if verificationReussie}
 		<div
-			transition:fade={{ duration: 300 }}
+			transition:fade={{ duration: 200 }}
 			class="fixed inset-0 z-50 flex flex-col items-center justify-center gap-4 bg-slate-950/90 backdrop-blur-sm"
 		>
 			<div

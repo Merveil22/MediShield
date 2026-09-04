@@ -1,13 +1,14 @@
 -- ============================================================
--- MediShield — Schéma MySQL complet
+-- MediShield — Schéma MySQL COMPLET ET À JOUR
 -- Système de supervision IDS pour le CNHU-HKM
--- Basé sur le Document de Conception Technique et Fonctionnelle v1.0
+-- Consolide : schéma initial (12 tables) + migration_02
+-- (mot_de_passe_pdf, email_confirme, confirmations_email)
 -- ============================================================
 
 -- ATTENTION : cette ligne supprime la base existante si elle existe
 -- déjà, pour repartir sur une base propre à chaque exécution (utile
 -- en développement). Commente-la si tu ne veux JAMAIS effacer les
--- données existantes.
+-- données existantes une fois en production.
 DROP DATABASE IF EXISTS medishield;
 
 CREATE DATABASE IF NOT EXISTS medishield
@@ -28,13 +29,14 @@ CREATE TABLE IF NOT EXISTS utilisateurs (
     role ENUM('super_admin', 'admin') NOT NULL DEFAULT 'super_admin',
     otp_active BOOLEAN NOT NULL DEFAULT TRUE,
     canal_otp_prefere ENUM('email') NOT NULL DEFAULT 'email',
+    email_confirme BOOLEAN NOT NULL DEFAULT FALSE,
     status ENUM('actif', 'inactif', 'bloque') NOT NULL DEFAULT 'actif',
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     last_login DATETIME NULL
 );
 
 -- ------------------------------------------------------------
--- 2. OTP — codes d'authentification temporaires
+-- 2. OTP — codes d'authentification temporaires (connexion)
 -- ------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS otp (
     id INT AUTO_INCREMENT PRIMARY KEY,
@@ -62,7 +64,21 @@ CREATE TABLE IF NOT EXISTS sessions (
 );
 
 -- ------------------------------------------------------------
--- 4. EQUIPEMENTS — éléments du réseau à surveiller
+-- 4. CONFIRMATIONS_EMAIL — confirmation d'adresse à l'inscription
+--    (distincte de l'OTP de connexion)
+-- ------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS confirmations_email (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    utilisateur_id INT NOT NULL,
+    code VARCHAR(6) NOT NULL,
+    cree_le TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    expire_le DATETIME NOT NULL,
+    utilise BOOLEAN NOT NULL DEFAULT FALSE,
+    FOREIGN KEY (utilisateur_id) REFERENCES utilisateurs(id) ON DELETE CASCADE
+);
+
+-- ------------------------------------------------------------
+-- 5. EQUIPEMENTS — éléments du réseau à surveiller
 -- ------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS equipements (
     id INT AUTO_INCREMENT PRIMARY KEY,
@@ -78,7 +94,7 @@ CREATE TABLE IF NOT EXISTS equipements (
 );
 
 -- ------------------------------------------------------------
--- 5. ALERTES — événements de sécurité détectés par Suricata
+-- 6. ALERTES — événements de sécurité détectés par Suricata
 -- ------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS alertes (
     id INT AUTO_INCREMENT PRIMARY KEY,
@@ -99,14 +115,14 @@ CREATE TABLE IF NOT EXISTS alertes (
     FOREIGN KEY (traite_par) REFERENCES utilisateurs(id) ON DELETE SET NULL
 );
 
--- Ajout de la clé étrangère différée pour equipements.derniere_alerte_id
+-- Clé étrangère différée pour equipements.derniere_alerte_id
 -- (créée après alertes car référence croisée)
 ALTER TABLE equipements
     ADD CONSTRAINT fk_equipement_derniere_alerte
     FOREIGN KEY (derniere_alerte_id) REFERENCES alertes(id) ON DELETE SET NULL;
 
 -- ------------------------------------------------------------
--- 6. BLOCAGES_IP — adresses IP bloquées via iptables
+-- 7. BLOCAGES_IP — adresses IP bloquées via iptables
 -- ------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS blocages_ip (
     id INT AUTO_INCREMENT PRIMARY KEY,
@@ -126,7 +142,7 @@ CREATE TABLE IF NOT EXISTS blocages_ip (
 );
 
 -- ------------------------------------------------------------
--- 7. LOGS — journal des événements système
+-- 8. LOGS — journal des événements système
 -- ------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS logs (
     id INT AUTO_INCREMENT PRIMARY KEY,
@@ -140,7 +156,7 @@ CREATE TABLE IF NOT EXISTS logs (
 );
 
 -- ------------------------------------------------------------
--- 8. NOTIFICATIONS — alertes envoyées à l'utilisateur
+-- 9. NOTIFICATIONS — alertes envoyées à l'utilisateur (cloche)
 -- ------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS notifications (
     id INT AUTO_INCREMENT PRIMARY KEY,
@@ -156,7 +172,7 @@ CREATE TABLE IF NOT EXISTS notifications (
 );
 
 -- ------------------------------------------------------------
--- 9. PARAMETRES — configuration générale du système
+-- 10. PARAMETRES — configuration générale du système
 -- ------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS parametres (
     id INT AUTO_INCREMENT PRIMARY KEY,
@@ -166,16 +182,14 @@ CREATE TABLE IF NOT EXISTS parametres (
     modifie_le TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 );
 
--- Quelques paramètres par défaut (URL, fuseau horaire, seuils…)
 INSERT INTO parametres (cle, valeur, description) VALUES
     ('nom_application', 'MediShield', 'Nom affiché de l\'application'),
     ('fuseau_horaire', 'Africa/Porto-Novo', 'Fuseau horaire du système'),
     ('otp_duree_secondes', '300', 'Durée de validité d\'un code OTP'),
-    ('seuil_criticite_email', 'critique', 'Niveau minimum déclenchant un email immédiat')
-ON DUPLICATE KEY UPDATE cle = cle;
+    ('seuil_criticite_email', 'critique', 'Niveau minimum déclenchant un email immédiat');
 
 -- ------------------------------------------------------------
--- 10. ACTIVITES — actions effectuées par les administrateurs
+-- 11. ACTIVITES — actions effectuées par les administrateurs
 -- ------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS activites (
     id INT AUTO_INCREMENT PRIMARY KEY,
@@ -188,7 +202,7 @@ CREATE TABLE IF NOT EXISTS activites (
 );
 
 -- ------------------------------------------------------------
--- 11. STATISTIQUES — métriques agrégées (calculées périodiquement)
+-- 12. STATISTIQUES — métriques agrégées (calculées périodiquement)
 -- ------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS statistiques (
     id INT AUTO_INCREMENT PRIMARY KEY,
@@ -205,7 +219,7 @@ CREATE TABLE IF NOT EXISTS statistiques (
 );
 
 -- ------------------------------------------------------------
--- 12. RAPPORTS — rapports PDF générés
+-- 13. RAPPORTS — rapports PDF générés (chiffrés par mot de passe)
 -- ------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS rapports (
     id INT AUTO_INCREMENT PRIMARY KEY,
@@ -214,6 +228,7 @@ CREATE TABLE IF NOT EXISTS rapports (
     periode_debut DATE NOT NULL,
     periode_fin DATE NOT NULL,
     chemin_fichier VARCHAR(500),
+    mot_de_passe_pdf VARCHAR(64) NULL,
     taille INT UNSIGNED COMMENT 'Taille du fichier en octets',
     genere_par INT NOT NULL,
     genere_le TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -236,6 +251,7 @@ CREATE INDEX idx_equipements_statut ON equipements (statut, type);
 CREATE INDEX idx_otp_utilisateur ON otp (utilisateur_id, utilise);
 CREATE INDEX idx_sessions_utilisateur ON sessions (utilisateur_id, revoquee);
 CREATE INDEX idx_notifications_utilisateur ON notifications (utilisateur_id, lue);
+CREATE INDEX idx_confirmations_utilisateur ON confirmations_email (utilisateur_id, utilise);
 
 -- ------------------------------------------------------------
 -- DONNÉES DE DÉMONSTRATION — équipements du CNHU-HKM

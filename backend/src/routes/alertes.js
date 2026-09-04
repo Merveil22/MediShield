@@ -5,11 +5,6 @@ import { enregistrerActivite, creerNotification } from '../utils/journal.js';
 
 export const routeurAlertes = Router();
 
-/**
- * GET /api/alerts
- * Liste les alertes, avec filtres optionnels par query string :
- * ?gravite=critique&statut=nouvelle&recherche=192.168
- */
 routeurAlertes.get('/alerts', verifierToken, async (req, res) => {
 	try {
 		const { gravite, statut, recherche } = req.query;
@@ -43,10 +38,6 @@ routeurAlertes.get('/alerts', verifierToken, async (req, res) => {
 	}
 });
 
-/**
- * PATCH /api/alerts/:id
- * Met à jour le statut d'une alerte : { statut: 'traitee' | 'ignoree' | 'en_cours', notes? }
- */
 routeurAlertes.patch('/alerts/:id', verifierToken, async (req, res) => {
 	try {
 		const { statut, notes } = req.body;
@@ -74,11 +65,6 @@ routeurAlertes.patch('/alerts/:id', verifierToken, async (req, res) => {
 	}
 });
 
-/**
- * POST /api/alerts
- * Crée une alerte manuellement — utile pour tester l'interface tant
- * que la vraie connexion Suricata n'est pas branchée.
- */
 routeurAlertes.post('/alerts', verifierToken, async (req, res) => {
 	try {
 		const { ip_source, ip_cible, type_attaque, gravite, message } = req.body;

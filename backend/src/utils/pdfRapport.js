@@ -5,12 +5,10 @@ import { fileURLToPath } from 'node:url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
-// Le logo est déposé côté frontend (static/logo.png). On le cherche
-// ici pour l'inclure automatiquement sur la page de garde du PDF —
-// aucune configuration supplémentaire n'est nécessaire si tu as déjà
-// suivi les instructions du frontend.
-const CHEMIN_LOGO = path.join(__dirname, '..', '..', '..', 'frontend', 'static', 'logo.png');
-const LOGO_DISPONIBLE = fs.existsSync(CHEMIN_LOGO);
+const DOSSIER_STATIC = path.join(__dirname, '..', '..', '..', 'frontend', 'static');
+const CHEMIN_LOGO_MEDISHIELD = path.join(DOSSIER_STATIC, 'logo.png');
+const CHEMIN_LOGO_CNHU = path.join(DOSSIER_STATIC, 'logo-cnhu.png');
+const CHEMIN_BADGE_CONFIDENTIEL = path.join(DOSSIER_STATIC, 'badge_confidentiel.png');
 
 const COULEURS = {
 	bleuCnhu: '#003399',
@@ -35,12 +33,15 @@ function couleurScore(score) {
 	return COULEURS.rouge;
 }
 
-function ajouterPiedDePage(doc, texteGauche) {
-	// PDFKit déclenche automatiquement un saut de page si le texte
-	// écrit dépasse la marge basse définie. Le pied de page est
-	// volontairement placé DANS cette marge (en bas de la feuille),
-	// donc on désactive temporairement la marge basse le temps de
-	// l'écrire, pour éviter de créer des pages vides en boucle.
+function imageExiste(chemin) {
+	try {
+		return fs.existsSync(chemin);
+	} catch {
+		return false;
+	}
+}
+
+function ajouterPiedDePage(doc) {
 	const margeBasOriginale = doc.page.margins.bottom;
 	doc.page.margins.bottom = 0;
 
@@ -48,7 +49,11 @@ function ajouterPiedDePage(doc, texteGauche) {
 	doc
 		.fontSize(8)
 		.fillColor(COULEURS.texteClair)
-		.text(texteGauche, 50, bas, { width: 250, lineBreak: false });
+		.text('Document Confidentiel – Rapport de Sécurité Réseau', 50, bas, {
+			width: 320,
+			lineBreak: false
+		});
+	doc.text('MédiShield', 300, bas, { width: 150, lineBreak: false });
 	doc.text(`Page ${doc.bufferedPageRange().count}`, doc.page.width - 150, bas, {
 		width: 100,
 		align: 'right',
@@ -58,9 +63,6 @@ function ajouterPiedDePage(doc, texteGauche) {
 	doc.page.margins.bottom = margeBasOriginale;
 }
 
-/**
- * Dessine une jauge circulaire simple pour le score de sécurité.
- */
 function dessinerJaugeScore(doc, x, y, rayon, score) {
 	const couleur = couleurScore(score);
 	doc.save();
@@ -68,25 +70,20 @@ function dessinerJaugeScore(doc, x, y, rayon, score) {
 	doc.strokeColor(COULEURS.gris);
 	doc.circle(x, y, rayon).stroke();
 
-	// Arc proportionnel au score (approximation avec des segments)
 	const angleDepart = -Math.PI / 2;
 	const angleFin = angleDepart + (score / 100) * 2 * Math.PI;
 	doc.strokeColor(couleur);
-	doc
-		.path(
-			decrireArc(x, y, rayon, angleDepart, angleFin)
-		)
-		.stroke();
+	doc.path(decrireArc(x, y, rayon, angleDepart, angleFin)).stroke();
 	doc.restore();
 
-	doc
-		.fontSize(20)
-		.fillColor(couleur)
-		.text(String(score), x - rayon, y - 12, { width: rayon * 2, align: 'center' });
-	doc
-		.fontSize(8)
-		.fillColor(COULEURS.texteClair)
-		.text('/ 100', x - rayon, y + 10, { width: rayon * 2, align: 'center' });
+	doc.fontSize(20).fillColor(couleur).text(String(score), x - rayon, y - 12, {
+		width: rayon * 2,
+		align: 'center'
+	});
+	doc.fontSize(8).fillColor(COULEURS.texteClair).text('/ 100', x - rayon, y + 10, {
+		width: rayon * 2,
+		align: 'center'
+	});
 }
 
 function decrireArc(cx, cy, r, angleDepart, angleFin) {
@@ -101,10 +98,6 @@ function decrireArc(cx, cy, r, angleDepart, angleFin) {
 	return d;
 }
 
-/**
- * Dessine un graphique en barres horizontales simple (sans
- * dépendance externe) pour la répartition par gravité.
- */
 function dessinerBarresGravite(doc, x, y, largeur, repartition) {
 	const maxValeur = Math.max(...Object.values(repartition), 1);
 	const hauteurBarre = 16;
@@ -114,79 +107,118 @@ function dessinerBarresGravite(doc, x, y, largeur, repartition) {
 		const yBarre = y + i * espacement;
 		const largeurBarre = (valeur / maxValeur) * (largeur - 100);
 
-		doc
-			.fontSize(9)
-			.fillColor(COULEURS.texte)
-			.text(niveau, x, yBarre + 3, { width: 70 });
-
-		doc
-			.rect(x + 75, yBarre, Math.max(largeurBarre, 2), hauteurBarre)
-			.fill(COULEUR_GRAVITE[niveau] || COULEURS.texteClair);
-
-		doc
-			.fontSize(9)
-			.fillColor(COULEURS.texte)
-			.text(String(valeur), x + 80 + largeurBarre, yBarre + 3);
+		doc.fontSize(9).fillColor(COULEURS.texte).text(niveau, x, yBarre + 3, { width: 70 });
+		doc.rect(x + 75, yBarre, Math.max(largeurBarre, 2), hauteurBarre).fill(
+			COULEUR_GRAVITE[niveau] || COULEURS.texteClair
+		);
+		doc.fontSize(9).fillColor(COULEURS.texte).text(String(valeur), x + 80 + largeurBarre, yBarre + 3);
 	});
 
 	return y + Object.keys(repartition).length * espacement;
 }
 
-/**
- * Génère le PDF complet et l'écrit sur disque. Renvoie une Promise
- * résolue une fois le fichier entièrement écrit.
- */
-export function genererPdfRapport({ cheminFichier, type, periodeDebut, periodeFin, admin, donnees }) {
-	const { alertesPeriode, nbCritiques, nbElevees, nbMoyennes, nbFaibles, nbTraitees, scoreSecurite, equipements, activitesRecentes } =
-		donnees;
+export function genererPdfRapport({
+	cheminFichier,
+	type,
+	periodeDebut,
+	periodeFin,
+	admin,
+	motDePasse,
+	donnees
+}) {
+	const {
+		alertesPeriode,
+		nbCritiques,
+		nbElevees,
+		nbMoyennes,
+		nbFaibles,
+		nbTraitees,
+		scoreSecurite,
+		equipements,
+		activitesRecentes
+	} = donnees;
 
 	return new Promise((resolve, reject) => {
-		const doc = new PDFDocument({ margin: 50, size: 'A4', bufferPages: true });
+		const doc = new PDFDocument({
+			margin: 50,
+			size: 'A4',
+			bufferPages: true,
+			userPassword: motDePasse,
+			permissions: { printing: 'lowResolution', modifying: false, copying: false, annotating: false }
+		});
 		const flux = fs.createWriteStream(cheminFichier);
 		doc.pipe(flux);
 
-		// ============================================================
-		// PAGE DE GARDE
-		// ============================================================
-		if (LOGO_DISPONIBLE) {
+		const yHautPage = 45;
+		if (imageExiste(CHEMIN_LOGO_CNHU)) {
 			try {
-				doc.image(CHEMIN_LOGO, doc.page.width / 2 - 40, 70, { width: 80, height: 80 });
+				doc.image(CHEMIN_LOGO_CNHU, 50, yHautPage, { width: 85, height: 60, fit: [85, 60] });
 			} catch {
-				// si le fichier n'est pas une image valide, on ignore
+			
+			}
+		}
+		if (imageExiste(CHEMIN_LOGO_MEDISHIELD)) {
+			try {
+				doc.image(CHEMIN_LOGO_MEDISHIELD, doc.page.width - 175, yHautPage, {
+					width: 125,
+					height: 60,
+					fit: [125, 60]
+				});
+			} catch {
+				
 			}
 		}
 
 		doc
-			.fontSize(22)
+			.fontSize(19)
 			.fillColor(COULEURS.bleuCnhu)
-			.text('RAPPORT DE SÉCURITÉ RÉSEAU', 50, LOGO_DISPONIBLE ? 170 : 100, {
+			.text('RAPPORT DE SÉCURITÉ RÉSEAU', 50, yHautPage + 85, {
+				width: doc.page.width - 100,
 				align: 'center'
 			});
-		doc
-			.fontSize(13)
-			.fillColor(COULEURS.texte)
-			.text('Centre National Hospitalier Universitaire - HKM', { align: 'center' });
-		doc.moveDown(1.5);
 
+		doc.y = yHautPage + 130;
+		doc
+			.fontSize(11)
+			.fillColor(COULEURS.texte)
+			.text('IDS - Réseau Hospitalier', { align: 'center' });
 		doc
 			.fontSize(10)
 			.fillColor(COULEURS.texteClair)
-			.text(`Type de rapport : ${type}`, { align: 'center' })
-			.text(`Période couverte : ${periodeDebut} au ${periodeFin}`, { align: 'center' })
-			.text(`Généré le : ${new Date().toLocaleString('fr-FR')}`, { align: 'center' })
-			.text(`Généré par : ${admin.prenom} ${admin.nom}`, { align: 'center' });
+			.text('Centre National Hospitalier Universitaire – HKM', { align: 'center' });
 
-		doc.moveDown(3);
-		doc
-			.fontSize(9)
-			.fillColor(COULEURS.texteClair)
-			.text('DOCUMENT CONFIDENTIEL', { align: 'center' });
+		doc.moveDown(2);
 
-		ajouterPiedDePage(doc, 'MediShield — Système de supervision IDS');
+		
+		const infos = [
+			['Type de Rapport :', type],
+			['Période Couverte :', `${periodeDebut} au ${periodeFin}`],
+			['Généré le :', new Date().toLocaleString('fr-FR')],
+			['Généré Par :', `${admin.prenom} ${admin.nom}`]
+		];
+		let yInfo = doc.y + 10;
+		const xLabel = 170;
+		const xValeur = 320;
+		infos.forEach(([label, valeur]) => {
+			doc.fontSize(10).fillColor(COULEURS.texte).text(label, xLabel, yInfo, { width: 140 });
+			doc.fillColor(COULEURS.texteClair).text(valeur, xValeur, yInfo, { width: 200 });
+			yInfo += 20;
+		});
 
-		// ============================================================
-		// PAGE 2 — RÉSUMÉ EXÉCUTIF
-		// ============================================================
+		doc.y = yInfo + 30;
+
+		if (imageExiste(CHEMIN_BADGE_CONFIDENTIEL)) {
+			try {
+				doc.image(CHEMIN_BADGE_CONFIDENTIEL, doc.page.width / 2 - 55, doc.y, { width: 110 });
+			} catch {
+
+			}
+		} else {
+			doc.fontSize(9).fillColor(COULEURS.texteClair).text('DOCUMENT CONFIDENTIEL', { align: 'center' });
+		}
+
+		ajouterPiedDePage(doc);
+
 		doc.addPage();
 		doc.fontSize(16).fillColor(COULEURS.bleuCnhu).text('Résumé exécutif');
 		doc.moveDown(1);
@@ -224,11 +256,8 @@ export function genererPdfRapport({ cheminFichier, type, periodeDebut, periodeFi
 		});
 		doc.y = yApresBarres + 20;
 
-		ajouterPiedDePage(doc, 'MediShield — Système de supervision IDS');
+		ajouterPiedDePage(doc);
 
-		// ============================================================
-		// PAGE 3 — DÉTAIL DES ALERTES CRITIQUES
-		// ============================================================
 		doc.addPage();
 		doc.fontSize(16).fillColor(COULEURS.bleuCnhu).text('Détail des alertes critiques');
 		doc.moveDown(1);
@@ -245,18 +274,17 @@ export function genererPdfRapport({ cheminFichier, type, periodeDebut, periodeFi
 				{ titre: 'Statut', largeur: 90 }
 			];
 			let yLigne = doc.y;
-			doc.fontSize(9).fillColor('#ffffff');
 			doc.rect(50, yLigne, 420, 20).fill(COULEURS.bleuCnhu);
 			let xCol = 55;
 			colonnes.forEach((c) => {
-				doc.fillColor('#ffffff').text(c.titre, xCol, yLigne + 6, { width: c.largeur });
+				doc.fontSize(9).fillColor('#ffffff').text(c.titre, xCol, yLigne + 6, { width: c.largeur });
 				xCol += c.largeur;
 			});
 			yLigne += 20;
 
 			alertesCritiques.forEach((a, i) => {
 				if (yLigne > doc.page.height - 80) {
-					ajouterPiedDePage(doc, 'MediShield — Système de supervision IDS');
+					ajouterPiedDePage(doc);
 					doc.addPage();
 					yLigne = 50;
 				}
@@ -277,11 +305,8 @@ export function genererPdfRapport({ cheminFichier, type, periodeDebut, periodeFi
 			doc.y = yLigne + 10;
 		}
 
-		ajouterPiedDePage(doc, 'MediShield — Système de supervision IDS');
+		ajouterPiedDePage(doc);
 
-		// ============================================================
-		// PAGE 4 — ACTIONS EFFECTUÉES + ÉTAT DES ÉQUIPEMENTS
-		// ============================================================
 		doc.addPage();
 		doc.fontSize(16).fillColor(COULEURS.bleuCnhu).text('Actions effectuées');
 		doc.moveDown(1);
@@ -320,7 +345,7 @@ export function genererPdfRapport({ cheminFichier, type, periodeDebut, periodeFi
 			});
 		}
 
-		ajouterPiedDePage(doc, 'MediShield — Système de supervision IDS');
+		ajouterPiedDePage(doc);
 
 		doc.end();
 

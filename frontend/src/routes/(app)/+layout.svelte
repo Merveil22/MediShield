@@ -1,7 +1,8 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
+	import { onMount, onDestroy } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/stores';
+	import { browser } from '$app/environment';
 	import {
 		Shield,
 		LayoutDashboard,
@@ -28,14 +29,11 @@
 		marquerToutesNotificationsLues
 	} from '$lib/api/ressources';
 
-	// ------------------------------------------------------------------
-	// Authentification + profil admin
-	// ------------------------------------------------------------------
-
 	let nomAdmin = '';
 	let chargementProfil = true;
 
 	onMount(async () => {
+		if (!browser) return;
 		const token = localStorage.getItem('medishield_token');
 		if (!token) {
 			goto('/login');
@@ -45,8 +43,9 @@
 			const profil = await recupererProfil();
 			nomAdmin = `${profil.prenom} ${profil.nom}`;
 			await chargerNotifications();
+			demarrerNotificationsSysteme();
+			activerDeblocageAudio();
 		} catch {
-			// Token invalide/expiré -> retour au login
 			localStorage.removeItem('medishield_token');
 			goto('/login');
 		} finally {
@@ -54,35 +53,118 @@
 		}
 	});
 
+	onDestroy(() => {
+		if (intervalleVerification) clearInterval(intervalleVerification);
+		if (browser) window.removeEventListener('click', debloquerAudio);
+	});
+
 	function deconnexion() {
 		localStorage.removeItem('medishield_token');
 		goto('/login');
 	}
 
-	// Mode IDS/IPS — état partagé visuel (branché plus tard au backend
-	// une fois Suricata connecté).
 	let modeIps = false;
-
-	// Si static/logo.png n'existe pas, on retombe sur l'icône bouclier.
 	let logoManquant = false;
 
-	// ------------------------------------------------------------------
-	// Notifications (cloche 🔔)
-	// ------------------------------------------------------------------
+	let contexteAudio: AudioContext | null = null;
+
+	function debloquerAudio() {
+		if (!browser) return;
+		if (!contexteAudio) {
+			contexteAudio = new AudioContext();
+		}
+		if (contexteAudio.state === 'suspended') {
+			contexteAudio.resume();
+		}
+	}
+
+	function activerDeblocageAudio() {
+		if (!browser) return;
+		window.addEventListener('click', debloquerAudio);
+	}
+
+	function jouerSonNotification() {
+		try {
+			if (!contexteAudio) return;
+			if (contexteAudio.state === 'suspended') {
+				contexteAudio.resume();
+			}
+			const oscillateur = contexteAudio.createOscillator();
+			const gain = contexteAudio.createGain();
+			oscillateur.type = 'sine';
+			oscillateur.frequency.setValueAtTime(880, contexteAudio.currentTime);
+			oscillateur.frequency.setValueAtTime(660, contexteAudio.currentTime + 0.12);
+			gain.gain.setValueAtTime(0.15, contexteAudio.currentTime);
+			gain.gain.exponentialRampToValueAtTime(0.001, contexteAudio.currentTime + 0.35);
+			oscillateur.connect(gain);
+			gain.connect(contexteAudio.destination);
+			oscillateur.start();
+			oscillateur.stop(contexteAudio.currentTime + 0.35);
+		} catch {
+		
+		}
+	}
 
 	type Notification = { id: number; type: string; message: string; lue: boolean; envoye_le: string };
 
 	let notifications: Notification[] = [];
 	let panneauNotifOuvert = false;
+	let dernierIdConnu: number | null = null;
+	let intervalleVerification: ReturnType<typeof setInterval> | null = null;
 
 	$: nbNonLues = notifications.filter((n) => !n.lue).length;
 
 	async function chargerNotifications() {
 		try {
-			notifications = await listerNotifications();
+			const resultat: Notification[] = await listerNotifications();
+			notifications = resultat;
+			if (dernierIdConnu === null && resultat.length > 0) {
+				dernierIdConnu = Math.max(...resultat.map((n) => n.id));
+			}
 		} catch {
-			// silencieux
+			
 		}
+	}
+
+	function afficherNotificationSysteme(notif: Notification) {
+		if (!browser) return;
+		jouerSonNotification();
+
+		if ('Notification' in window && Notification.permission === 'granted') {
+			const n = new Notification('MediShield — Nouvelle alerte', {
+				body: notif.message,
+				icon: '/logo.png',
+				tag: `medishield-${notif.id}`
+			});
+			n.onclick = () => {
+				window.focus();
+				n.close();
+			};
+		}
+	}
+
+	async function verifierNouvellesNotifications() {
+		try {
+			const resultat: Notification[] = await listerNotifications();
+			const nouvelles = dernierIdConnu ? resultat.filter((n) => n.id > dernierIdConnu!) : [];
+
+			notifications = resultat;
+
+			if (nouvelles.length > 0) {
+				dernierIdConnu = Math.max(...resultat.map((n) => n.id));
+				nouvelles.sort((a, b) => a.id - b.id).forEach((n) => afficherNotificationSysteme(n));
+			}
+		} catch {
+			
+		}
+	}
+
+	function demarrerNotificationsSysteme() {
+		if (!browser) return;
+		if ('Notification' in window && Notification.permission === 'default') {
+			Notification.requestPermission();
+		}
+		intervalleVerification = setInterval(verifierNouvellesNotifications, 20000);
 	}
 
 	async function marquerLue(n: Notification) {
@@ -95,10 +177,6 @@
 		await marquerToutesNotificationsLues();
 		notifications = notifications.map((x) => ({ ...x, lue: true }));
 	}
-
-	// ------------------------------------------------------------------
-	// Navigation
-	// ------------------------------------------------------------------
 
 	const liensNav = [
 		{ href: '/', icon: LayoutDashboard, label: 'Tableau de bord' },
@@ -115,7 +193,6 @@
 
 	$: cheminActuel = $page.url.pathname;
 
-	// Titre de page affiché dans l'en-tête, déduit de l'URL
 	$: titrePage =
 		liensNav.find((l) => l.href === cheminActuel)?.label === 'Tableau de bord'
 			? "IDS - Réseau Hospitalier"
@@ -125,16 +202,10 @@
 <div class="relative flex min-h-screen">
 	<div class="bg-grid pointer-events-none fixed inset-0 z-0" />
 
-	<!-- Barre latérale -->
 	<aside
-		class="relative z-10 hidden w-64 shrink-0 border-r border-slate-800/60 bg-slate-950/85 md:flex md:flex-col"
+		class="relative z-30 hidden w-64 shrink-0 border-r border-slate-800/60 bg-slate-950/85 md:flex md:flex-col"
 	>
 		<div class="flex items-center gap-3 p-5">
-			<!--
-				Affiche automatiquement static/logo.png dès qu'il est
-				présent. S'il est absent, on retombe sur l'icône bouclier.
-				Dépose ton fichier ici : medishield/frontend/static/logo.png
-			-->
 			<div class="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-xl">
 				{#if !logoManquant}
 					<img
@@ -175,15 +246,14 @@
 		<div class="mt-auto w-full px-5 py-4">
 			<div class="mb-3 border-t border-slate-800" />
 			<p class="text-xs text-slate-500">CHU Hubert Koutoukou MAGA</p>
-			<p class="text-xs text-slate-600">© 2027 Nelly & Merveille - Tous droits réservés SSI-3</p>
+			<p class="text-xs text-slate-600">© 2027 Merveille ALLIHA GLE - Tous droits réservés SSI-3</p>
 		</div>
 	</aside>
 
-	<!-- Contenu principal -->
 	<div class="relative z-10 flex-1 overflow-x-hidden">
-		<!-- En-tête -->
+	
 		<header
-			class="flex flex-wrap items-center justify-between gap-4 border-b border-sky-400/15 bg-slate-950/75 px-8 py-4 backdrop-blur-xl"
+			class="relative z-30 flex flex-wrap items-center justify-between gap-4 border-b border-sky-400/15 bg-slate-950/75 px-8 py-4 backdrop-blur-xl"
 		>
 			<div class="min-w-0">
 				<div class="flex items-center gap-2">
@@ -221,7 +291,7 @@
 
 					{#if panneauNotifOuvert}
 						<div
-							class="glass absolute top-full right-0 z-20 mt-2 max-h-96 w-80 overflow-y-auto rounded-2xl p-0"
+							class="glass absolute top-full right-0 z-40 mt-2 max-h-96 w-80 overflow-y-auto rounded-2xl p-0"
 						>
 							<div class="flex items-center justify-between border-b border-slate-800 p-3">
 								<span class="text-xs font-semibold text-slate-400">Notifications</span>
@@ -291,3 +361,7 @@
 		<slot />
 	</div>
 </div>
+
+<p class="fixed bottom-2 left-1/2 z-0 -translate-x-1/2 text-[10px] text-slate-700">
+	© 2027 Merveille ALLIHA GLE - Tous droits réservés SSI-3
+</p>

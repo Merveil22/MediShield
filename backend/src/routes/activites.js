@@ -4,11 +4,6 @@ import { verifierToken } from './auth.js';
 
 export const routeurActivites = Router();
 
-/**
- * GET /api/activites
- * Journal des actions effectuées par les administrateurs (audit /
- * traçabilité, mentionné dans le document de conception).
- */
 routeurActivites.get('/activites', verifierToken, async (req, res) => {
 	try {
 		const [lignes] = await pool.query(
